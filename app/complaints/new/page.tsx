@@ -1,9 +1,24 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { UploadCloud, MapPin, Subtitles, FileText, Shield, Loader2, Info, Mic, MicOff } from "lucide-react";
+import { 
+  UploadCloud, 
+  MapPin, 
+  Subtitles, 
+  FileText, 
+  Shield, 
+  Loader2, 
+  Info, 
+  Mic, 
+  MicOff, 
+  Sparkles, 
+  CheckCircle2, 
+  AlertTriangle,
+  Lock,
+  ArrowRight
+} from "lucide-react";
 
 export default function NewComplaint() {
   const router = useRouter();
@@ -20,6 +35,55 @@ export default function NewComplaint() {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  // Live AI Prediction state
+  const [predictedCategory, setPredictedCategory] = useState<string | null>(null);
+  const [predictedPriority, setPredictedPriority] = useState<string | null>(null);
+  const [analyzingAi, setAnalyzingAi] = useState(false);
+
+  // Real-time AI preview when description changes
+  useEffect(() => {
+    if (!description || description.trim().length < 8) {
+      setPredictedCategory(null);
+      setPredictedPriority(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setAnalyzingAi(true);
+      try {
+        const res = await fetch("http://localhost:8000/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description }),
+          signal: AbortSignal.timeout(2000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setPredictedCategory(data.category);
+          setPredictedPriority(data.priority);
+          if (data.category && data.category !== "Other") {
+            setCategory(data.category);
+          }
+        }
+      } catch (e) {
+        // Local quick heuristics
+        const lower = description.toLowerCase();
+        if (lower.includes("gun") || lower.includes("knife") || lower.includes("kill") || lower.includes("blood")) {
+          setPredictedPriority("High");
+        } else if (lower.includes("stolen") || lower.includes("rob") || lower.includes("hit")) {
+          setPredictedPriority("Medium");
+        } else {
+          setPredictedPriority("Low");
+        }
+      } finally {
+        setAnalyzingAi(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [description, title]);
 
   const toggleListening = () => {
     if (isListening) {
@@ -29,7 +93,7 @@ export default function NewComplaint() {
     }
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Edge.");
       return;
     }
     const recognition = new SpeechRecognition();
@@ -64,20 +128,26 @@ export default function NewComplaint() {
     try {
       let evidenceHash = null;
       let evidenceUrl = null;
+      let fileType = null;
 
       if (files.length > 0) {
         const formData = new FormData();
         formData.append("file", files[0]);
-        // To accurately mimic the full endpoint, we assume it's set up
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        }).catch(() => null);
+        
+        try {
+          const uploadRes = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
 
-        if (uploadRes && uploadRes.ok) {
-          const uploadedData = await uploadRes.json();
-          evidenceHash = uploadedData.hash;
-          evidenceUrl = uploadedData.url;
+          if (uploadRes.ok) {
+            const uploadedData = await uploadRes.json();
+            evidenceHash = uploadedData.fileHash;
+            evidenceUrl = uploadedData.url;
+            fileType = uploadedData.fileType;
+          }
+        } catch (uploadErr) {
+          console.warn("Evidence upload note:", uploadErr);
         }
       }
 
@@ -90,16 +160,22 @@ export default function NewComplaint() {
           category,
           location,
           isAnonymous,
+          evidenceUrl,
+          fileType,
+          fileHash: evidenceHash
         }),
       });
 
       if (res.ok) {
-        router.push("/dashboard");
+        setSuccess(true);
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 1200);
       } else {
-        setError("Failed to submit complaint.");
+        setError("Failed to register complaint. Please check your inputs.");
       }
     } catch (err) {
-      setError("Network error.");
+      setError("Network connection issue. Please verify backend is running.");
     } finally {
       setLoading(false);
     }
@@ -107,141 +183,224 @@ export default function NewComplaint() {
 
   return (
     <div className="max-w-4xl mx-auto py-8 animate-in fade-in zoom-in-95 duration-500">
+      
+      {/* Header Banner */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Register a New Case</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">Submit detailed information about the incident. Our AI will automatically categorize and prioritize it for law enforcement.</p>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            AI-Assisted Case Ingress
+          </span>
+        </div>
+        <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white">Register Incident Report</h1>
+        <p className="text-slate-400 text-sm mt-2 font-medium">
+          Your report will be processed by our automated NLP engine for threat priority assignment and evidence hashing.
+        </p>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-        <div className="bg-gray-50/50 dark:bg-slate-900/50 px-8 py-6 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-4">
-          <h2 className="font-bold text-gray-900 dark:text-white flex items-center text-lg">
-            <span className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center mr-4">
-              <FileText className="w-5 h-5" />
+      <div className="bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-800/80 overflow-hidden">
+        
+        {/* Card Header Bar */}
+        <div className="px-8 py-5 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between flex-wrap gap-4">
+          <h2 className="font-bold text-white flex items-center text-base">
+            <span className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mr-3">
+              <FileText className="w-4 h-4" />
             </span>
-            Incident Details
+            Incident Metadata &amp; Evidence
           </h2>
-          <div className="flex items-center space-x-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 px-4 py-2 rounded-xl text-sm font-semibold border border-blue-100 dark:border-blue-900/50">
-            <Shield className="w-4 h-4 mr-2" /> Encrypted & Secure
+          <div className="flex items-center space-x-2 bg-emerald-500/10 text-emerald-400 px-3.5 py-1.5 rounded-xl text-xs font-bold border border-emerald-500/20">
+            <Lock className="w-3.5 h-3.5 mr-1" /> SHA-256 Verified Ingress
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-8">
-          {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-medium border border-red-100 shadow-sm">{error}</div>}
+        <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6">
+          
+          {error && (
+            <div className="bg-red-500/10 text-red-400 p-4 rounded-2xl text-xs font-bold border border-red-500/30 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
-          <div className="space-y-6">
+          {success && (
+            <div className="bg-emerald-500/10 text-emerald-400 p-4 rounded-2xl text-xs font-bold border border-emerald-500/30 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <span>Case registered successfully! Routing to Command Dashboard...</span>
+            </div>
+          )}
+
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-2 flex items-center">
+              Incident Headline <span className="text-red-400 ml-1">*</span>
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Subtitles className="h-4 w-4 text-slate-500" />
+              </div>
+              <input 
+                type="text" 
+                value={title} 
+                onChange={e => setTitle(e.target.value)} 
+                className="block w-full pl-11 pr-4 py-3 bg-slate-950/60 border border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm text-white placeholder-slate-500 transition-all font-medium"
+                placeholder="e.g. Theft of commercial equipment at warehouse"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Category & Location */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                 Incident Title <span className="text-red-500 ml-1">*</span>
+              <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-2 flex items-center justify-between">
+                <span>Category</span>
+                {analyzingAi && <span className="text-[10px] text-cyan-400 flex items-center gap-1 font-mono"><Loader2 className="w-3 h-3 animate-spin" /> AI analyzing...</span>}
+              </label>
+              <select 
+                value={category} 
+                onChange={e => setCategory(e.target.value)} 
+                className="block w-full px-4 py-3 bg-slate-950/60 border border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm text-white cursor-pointer transition-all font-medium"
+              >
+                <option value="Theft">Theft & Burglary</option>
+                <option value="Assault">Physical Assault & Battery</option>
+                <option value="Vandalism">Vandalism & Property Damage</option>
+                <option value="Fraud">Fraud & Financial Scam</option>
+                <option value="Cybercrime">Cybercrime & Hacking</option>
+                <option value="Harassment">Harassment & Stalking</option>
+                <option value="Traffic & Road Safety">Traffic & Hit-and-Run</option>
+                <option value="Other">Other Unclassified</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-2 flex items-center">
+                Incident Location <span className="text-red-400 ml-1">*</span>
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Subtitles className="h-5 w-5 text-gray-400" />
+                  <MapPin className="h-4 w-4 text-slate-500" />
                 </div>
                 <input 
                   type="text" 
-                  value={title} 
-                  onChange={e => setTitle(e.target.value)} 
-                  className="block w-full pl-12 pr-4 py-3.5 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm dark:text-white transition-all shadow-sm"
-                  placeholder="E.g. Vandalism at City Park"
+                  value={location} 
+                  onChange={e => setLocation(e.target.value)} 
+                  className="block w-full pl-11 pr-4 py-3 bg-slate-950/60 border border-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm text-white placeholder-slate-500 transition-all font-medium"
+                  placeholder="e.g. Times Square & 44th St, New York"
                   required
                 />
               </div>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                  Select Category <span className="text-red-500 ml-1">*</span>
-                </label>
-                <select 
-                  value={category} 
-                  onChange={e => setCategory(e.target.value)} 
-                  className="block w-full px-4 py-3.5 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm dark:text-white transition-all shadow-sm appearance-none cursor-pointer"
-                >
-                  <option value="Theft">Theft</option>
-                  <option value="Assault">Assault</option>
-                  <option value="Vandalism">Vandalism</option>
-                  <option value="Fraud">Fraud</option>
-                  <option value="Other">Other</option>
-                </select>
-                <p className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 font-medium"><Info className="w-3.5 h-3.5 mr-1" /> Our AI may re-categorize based on your description.</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                  Location (GPS Configured) <span className="text-red-500 ml-1">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <MapPin className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input 
-                    type="text" 
-                    value={location} 
-                    onChange={e => setLocation(e.target.value)} 
-                    className="block w-full pl-12 pr-4 py-3.5 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm dark:text-white transition-all shadow-sm"
-                    placeholder="Search or enter location"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">Detailed Description <span className="text-red-500 ml-1">*</span></label>
-                <button 
-                  type="button" 
-                  onClick={toggleListening}
-                  className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg transition-colors border ${isListening ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/40 dark:border-red-800/50 dark:text-red-400 animate-pulse' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300'}`}
-                >
-                  {isListening ? <><Mic className="w-3.5 h-3.5 mr-1.5" /> Recording...</> : <><MicOff className="w-3.5 h-3.5 mr-1.5" /> Voice Dictation</>}
-                </button>
-              </div>
-              <textarea 
-                value={description} 
-                onChange={e => setDescription(e.target.value)} 
-                rows={5}
-                className="block w-full p-5 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm dark:text-white transition-all shadow-sm resize-none"
-                placeholder="Please describe the incident in detail... You may type or use the voice dictation button above."
-                required
-              ></textarea>
-            </div>
-
-            <div className="border-t border-gray-100 dark:border-slate-800 pt-6">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-4">Digital Evidence (Tamper-Proof)</label>
-              <div className="w-full border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-2xl p-10 hover:bg-gray-50 dark:hover:bg-slate-800/50 hover:border-blue-400 dark:hover:border-blue-500 transition-all cursor-pointer group flex flex-col items-center justify-center relative bg-gray-50/30 dark:bg-slate-800/20">
-                <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-5 group-hover:scale-110 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-all shadow-sm">
-                  <UploadCloud className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-                </div>
-                <p className="text-sm font-bold text-gray-800 dark:text-white mb-2">Click to upload or drag & drop</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 text-center max-w-sm leading-relaxed font-medium">Files are cryptographic hashed (SHA-256) upon upload ensuring court admissibility and data fidelity.</p>
-                {files.length > 0 && <span className="mt-4 px-3 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-200">{files[0].name}</span>}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-5 bg-gray-50 dark:bg-slate-800/50 rounded-2xl border border-gray-200 dark:border-slate-700 transition-colors hover:bg-gray-100 dark:hover:bg-slate-800">
-              <div>
-                <h4 className="font-bold text-gray-900 dark:text-white text-sm">File Anonymously</h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">Your identity will be completely hidden from public records.</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" checked={isAnonymous} onChange={() => setIsAnonymous(!isAnonymous)} />
-                <div className="w-11 h-6 bg-gray-300 dark:bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          {/* Description & Speech Recognition */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-black text-slate-300 uppercase tracking-widest">
+                Detailed Narrative <span className="text-red-400 ml-1">*</span>
               </label>
+              <button 
+                type="button" 
+                onClick={toggleListening}
+                className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-xl transition-all border ${
+                  isListening 
+                    ? 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse' 
+                    : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                {isListening ? (
+                  <><Mic className="w-3.5 h-3.5 mr-1.5 text-red-400" /> Listening... (Speak Now)</>
+                ) : (
+                  <><MicOff className="w-3.5 h-3.5 mr-1.5 text-slate-400" /> Speech to Text</>
+                )}
+              </button>
+            </div>
+            
+            <textarea 
+              value={description} 
+              onChange={e => setDescription(e.target.value)} 
+              rows={4}
+              className="block w-full p-4 bg-slate-950/60 border border-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm text-white placeholder-slate-500 transition-all resize-none font-medium leading-relaxed"
+              placeholder="Describe the sequence of events, suspect descriptions, weapon types, and any damages..."
+              required
+            />
+
+            {/* Live AI Detection Pill */}
+            {(predictedPriority || predictedCategory) && (
+              <div className="mt-3 p-3.5 rounded-xl bg-blue-950/30 border border-blue-900/40 flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-cyan-400" />
+                  <span className="text-slate-300 font-medium">Real-Time NLP Assessment:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {predictedCategory && (
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-cyan-300 font-bold border border-slate-700 font-mono text-[11px]">
+                      {predictedCategory}
+                    </span>
+                  )}
+                  {predictedPriority && (
+                    <span className={`px-2.5 py-1 rounded-lg font-bold border text-[11px] uppercase tracking-wider ${
+                      predictedPriority === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/40' :
+                      predictedPriority === 'Medium' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' :
+                      'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                    }`}>
+                      {predictedPriority} Priority
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Evidence Upload */}
+          <div className="border-t border-slate-800 pt-6">
+            <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-3">
+              Tamper-Proof Digital Evidence
+            </label>
+            <div className="w-full border-2 border-dashed border-slate-800 hover:border-blue-500/50 rounded-2xl p-8 transition-all cursor-pointer group flex flex-col items-center justify-center relative bg-slate-950/30 hover:bg-slate-950/60">
+              <input type="file" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              <div className="w-14 h-14 bg-blue-600/10 border border-blue-500/20 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 group-hover:bg-blue-600/20 transition-all">
+                <UploadCloud className="w-7 h-7 text-blue-400" />
+              </div>
+              <p className="text-sm font-bold text-white mb-1">Click to attach photos, videos, or documents</p>
+              <p className="text-xs text-slate-400 text-center max-w-sm font-medium">
+                SHA-256 fingerprint generated automatically at upload for legal chain-of-custody.
+              </p>
+              {files.length > 0 && (
+                <div className="mt-4 px-3 py-1.5 bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-bold rounded-xl flex items-center gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Selected: {files[0].name} ({(files[0].size / 1024).toFixed(1)} KB)</span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="pt-6 flex justify-end">
-             <button 
+          {/* Anonymous Toggle */}
+          <div className="flex items-center justify-between p-4 bg-slate-950/40 rounded-2xl border border-slate-800">
+            <div>
+              <h4 className="font-bold text-white text-sm">File Anonymously (Whistleblower Protection)</h4>
+              <p className="text-xs text-slate-400 mt-0.5 font-medium">Your citizen identity will be stripped from police records.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={isAnonymous} onChange={() => setIsAnonymous(!isAnonymous)} />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* Submit Button */}
+          <div className="pt-4 flex justify-end">
+            <button 
               type="submit" 
               disabled={loading}
-              className="flex items-center px-10 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all disabled:opacity-70 text-sm hover:-translate-y-0.5"
+              className="flex items-center justify-center px-8 py-3.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-black rounded-xl shadow-xl shadow-blue-600/30 transition-all disabled:opacity-50 text-sm hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto"
             >
-              {loading ? <><Loader2 className="w-5 h-5 mr-3 animate-spin" /> Processing & Processing AI...</> : "Submit Incident Report"}
+              {loading ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing AI NLP &amp; Evidence...</>
+              ) : (
+                <>Submit Case Record <ArrowRight className="w-4 h-4 ml-2" /></>
+              )}
             </button>
           </div>
+
         </form>
       </div>
     </div>

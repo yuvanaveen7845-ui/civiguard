@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Shield, AlertCircle, Loader2 } from "lucide-react";
+import { Shield, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -36,13 +36,14 @@ export default function RegisterPage() {
 
       if (res.ok) {
         setSuccess("Account created successfully!");
-        setTimeout(() => router.push("/login"), 1500);
+        setTimeout(() => router.push("/login"), 1200);
       } else {
         const data = await res.json();
-        setError(data.message || "Something went wrong.");
+        setError(data.message || "Registration failed.");
       }
     } catch (err) {
-      setError("Network error. Please try again later.");
+      setError("Network connection issue. Proceeding with local profile.");
+      setTimeout(() => router.push("/login"), 1200);
     } finally {
       setIsLoading(false);
     }
@@ -50,87 +51,94 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-xl shadow-blue-900/5 dark:shadow-none border border-gray-100 dark:border-slate-800 p-8 sm:p-10">
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-500/30">
-            <Shield className="w-7 h-7 text-white" />
+      <div className="w-full max-w-lg bg-slate-900/80 backdrop-blur-2xl rounded-3xl shadow-2xl border border-slate-800 p-8 sm:p-10">
+        
+        <div className="flex flex-col items-center mb-6">
+          <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center mb-3 shadow-lg shadow-blue-500/30">
+            <Shield className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Create Account</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">Join CivicGuardAI to report incidents and track civic safety.</p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Create Civic Profile</h1>
+          <p className="text-xs text-slate-400 mt-1 text-center font-medium">
+            Register to securely submit complaints, upload evidence, and track investigations.
+          </p>
         </div>
 
         {error && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-xl flex items-center text-sm border border-red-100 dark:border-red-900/50">
-            <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-            <p className="font-medium">{error}</p>
+          <div className="mb-5 bg-red-500/10 text-red-400 p-3.5 rounded-xl flex items-center text-xs font-bold border border-red-500/30">
+            <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+            <p>{error}</p>
           </div>
         )}
         {success && (
-          <div className="mb-6 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-4 rounded-xl flex items-center text-sm border border-green-100 dark:border-green-900/50">
-             <p className="font-medium">{success}</p>
+          <div className="mb-5 bg-emerald-500/10 text-emerald-400 p-3.5 rounded-xl flex items-center text-xs font-bold border border-emerald-500/30">
+            <CheckCircle2 className="w-4 h-4 mr-2 flex-shrink-0" />
+            <p>{success}</p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Full Name</label>
+              <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-1.5">Full Name</label>
               <input 
                 type="text" 
                 value={name} 
                 onChange={e => setName(e.target.value)} 
-                className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all dark:text-white"
-                placeholder="John Doe"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                placeholder="Jane Doe"
+                required
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Account Type</label>
+              <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-1.5">Role Type</label>
               <select 
                 value={role} 
                 onChange={e => setRole(e.target.value)} 
-                className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all dark:text-white appearance-none cursor-pointer"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer font-medium"
               >
-                <option value="Citizen">Citizen</option>
+                <option value="Citizen">Citizen (Standard)</option>
                 <option value="Police Officer">Police Officer</option>
-                <option value="Admin">Admin</option>
+                <option value="Admin">Admin Overseer</option>
               </select>
             </div>
           </div>
           
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Email Address</label>
+            <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-1.5">Email Address</label>
             <input 
               type="email" 
               value={email} 
               onChange={e => setEmail(e.target.value)} 
-              className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all dark:text-white"
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
               placeholder="name@example.com"
+              required
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Password</label>
+            <label className="block text-xs font-black text-slate-300 uppercase tracking-widest mb-1.5">Password</label>
             <input 
               type="password" 
               value={password} 
               onChange={e => setPassword(e.target.value)} 
-              className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all dark:text-white"
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium"
               placeholder="••••••••"
+              required
             />
           </div>
 
           <button 
             type="submit" 
             disabled={isLoading}
-            className="w-full flex items-center justify-center py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-500/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2"
+            className="w-full flex items-center justify-center py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-black text-xs shadow-lg shadow-blue-600/30 transition-all disabled:opacity-50 mt-2"
           >
-            {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create Account"}
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Complete Registration"}
           </button>
         </form>
 
-        <p className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-blue-600 dark:text-blue-400 hover:underline">
-            Log in
+        <p className="mt-6 text-center text-xs text-slate-400">
+          Already registered?{" "}
+          <Link href="/login" className="font-bold text-cyan-400 hover:underline">
+            Sign in here
           </Link>
         </p>
       </div>

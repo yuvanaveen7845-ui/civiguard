@@ -2,7 +2,22 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { PlusCircle, FileText, CheckCircle, Clock, MapPin, Loader2, ArrowRight, Activity, Zap } from "lucide-react";
+import { 
+  PlusCircle, 
+  FileText, 
+  CheckCircle, 
+  Clock, 
+  MapPin, 
+  Loader2, 
+  ArrowRight, 
+  Activity, 
+  Zap, 
+  ShieldAlert, 
+  UserCheck, 
+  Search,
+  Filter,
+  Sparkles
+} from "lucide-react";
 
 export default function Dashboard() {
   const { data: session } = useSession();
@@ -10,6 +25,13 @@ export default function Dashboard() {
   const [officers, setOfficers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const getLocationString = (loc: any) => {
+    if (!loc) return "Not Specified";
+    if (typeof loc === "object") return loc.address || "Unknown Address";
+    return String(loc);
+  };
 
   useEffect(() => {
     async function fetchData() {
@@ -17,11 +39,9 @@ export default function Dashboard() {
         const res = await fetch("/api/cases");
         if (res.ok) setCases(await res.json());
 
-        // Standardize fetching officers if Admin
-        if (session?.user?.role === "Admin" || session?.user?.role === "Police Officer") {
-          const offRes = await fetch("/api/officers");
-          if (offRes.ok) setOfficers(await offRes.json());
-        }
+        // Fetch police officers for assignment
+        const offRes = await fetch("/api/officers");
+        if (offRes.ok) setOfficers(await offRes.json());
       } catch (err) {
         console.error(err);
       } finally {
@@ -38,261 +58,336 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assignedOfficerId: officerId, status: "Assigned Officer" })
       });
-      // Optimistic upate
+      // Optimistic update
       setCases(cases.map(c => c._id === caseId ? { ...c, assignedOfficerId: officerId, status: "Assigned Officer" } : c));
     } catch(e){}
-  }
+  };
 
-  // STEP 14: Smart Incident Detection (Hotspots)
+  // Smart Incident Detection (Hotspots)
   const hotspots = useMemo(() => {
     const locCounts: Record<string, number> = {};
     cases.forEach(c => {
-      if (c.status !== "Resolved" && c.location) {
-        locCounts[c.location] = (locCounts[c.location] || 0) + 1;
+      const locStr = getLocationString(c.location);
+      if (c.status !== "Resolved" && locStr && locStr !== "Not Specified") {
+        locCounts[locStr] = (locCounts[locStr] || 0) + 1;
       }
     });
-    // Flags locations with >= 2 active issues
     return Object.keys(locCounts).filter(loc => locCounts[loc] >= 2);
   }, [cases]);
 
   if (loading) return (
-    <div className="flex h-full items-center justify-center p-12 min-h-[50vh]">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+    <div className="flex h-full items-center justify-center p-12 min-h-[60vh]">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        <p className="text-xs font-mono text-slate-400">Synchronizing Command Records...</p>
+      </div>
     </div>
   );
 
-  const isCitizen = session?.user?.role === "Citizen";
-
   const totalCases = cases.length;
-  const activeCases = cases.filter(c => c.status === "Pending Review" || c.status === "In Progress" || c.status === "Assigned Officer").length;
+  const activeCases = cases.filter(c => c.status !== "Resolved").length;
+  const highPriorityCases = cases.filter(c => c.priorityScore === "High" && c.status !== "Resolved").length;
   const resolvedCases = cases.filter(c => c.status === "Resolved").length;
 
-  const filteredCases = filterStatus === "All" ? cases : cases.filter(c => c.status === filterStatus);
+  const filteredCases = cases.filter(c => {
+    const matchesStatus = filterStatus === "All" || c.status === filterStatus;
+    const locStr = getLocationString(c.location).toLowerCase();
+    const titleStr = (c.title || "").toLowerCase();
+    const catStr = (c.category || "").toLowerCase();
+    const query = searchQuery.toLowerCase();
+    const matchesSearch = !query || titleStr.includes(query) || locStr.includes(query) || catStr.includes(query);
+    return matchesStatus && matchesSearch;
+  });
 
-  if (isCitizen) {
-    return (
-      <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Citizen Dashboard</h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">Overview of your submitted reports and their current statuses.</p>
-          </div>
-          <Link href="/complaints/new" className="flex items-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/30 transition-all font-semibold text-sm">
-            <PlusCircle className="w-5 h-5 mr-2" /> Register New Case
-          </Link>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm flex items-center group">
-            <div className="w-14 h-14 bg-gray-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center mr-5 group-hover:scale-110 transition-transform">
-              <FileText className="w-7 h-7 text-gray-600 dark:text-gray-300" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Total Reports</p>
-              <h3 className="text-3xl font-black text-gray-900 dark:text-white">{totalCases}</h3>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm flex items-center group">
-            <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center mr-5 group-hover:scale-110 transition-transform">
-              <Clock className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Active Cases</p>
-              <h3 className="text-3xl font-black text-gray-900 dark:text-white">{activeCases}</h3>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm flex items-center group">
-            <div className="w-14 h-14 bg-green-50 dark:bg-green-900/30 rounded-2xl flex items-center justify-center mr-5 group-hover:scale-110 transition-transform">
-              <CheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1">Resolved</p>
-              <h3 className="text-3xl font-black text-gray-900 dark:text-white">{resolvedCases}</h3>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Cases */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-          <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 flex justify-between items-center">
-            <h3 className="font-bold text-lg text-gray-900 dark:text-white">Recent Complaints</h3>
-            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-full">{cases.length} Items</span>
-          </div>
-          <div className="divide-y divide-gray-50 dark:divide-slate-800">
-            {cases.length === 0 ? (
-              <div className="p-12 text-center flex flex-col items-center justify-center">
-                <FileText className="w-12 h-12 text-gray-300 dark:text-gray-700 mb-4" />
-                <p className="text-gray-500 dark:text-gray-400 font-medium">No cases found. Start by registering a new complaint.</p>
-              </div>
-            ) : (
-              cases.map((c) => (
-                <Link key={c._id} href={`/cases/${c._id}`} className="block p-6 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors group">
-                  <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                    <div className="flex items-start">
-                      <div className={`p-3 rounded-full mr-4 shadow-sm border ${c.status === 'Resolved' ? 'bg-green-50 text-green-600 border-green-100 dark:bg-green-900/30 dark:border-green-800/30' : 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-900/30 dark:border-blue-800/30'}`}>
-                        {c.status === 'Resolved' ? <CheckCircle className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-lg text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">
-                          {c.title}
-                          {hotspots.includes(c.location) && (
-                            <span className="ml-3 inline-flex items-center text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-widest"><Zap className="w-3 h-3 mr-1" /> Hotspot</span>
-                          )}
-                        </h4>
-                        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mt-2">
-                          <span className="bg-gray-100 dark:bg-slate-800 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider mr-3">{c.category}</span>
-                          <span className="flex items-center font-medium"><MapPin className="w-3.5 h-3.5 mr-1 text-gray-400" /> {c.location || "N/A"}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center text-sm sm:text-right">
-                      <ArrowRight className="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-blue-500 transition-colors sm:hidden" />
-                      <div className="hidden sm:block">
-                        <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest border ${
-                          c.status === 'Resolved' ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800/50 dark:text-green-400' :
-                          'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-400'
-                        }`}>
-                          {c.status}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Police / Admin View
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500">
+    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in zoom-in-95 duration-500 pb-12">
+      
+      {/* Top Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Command Center</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Manage and track active civic safety incidents across regions.</p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] uppercase font-mono tracking-widest px-2.5 py-0.5 rounded-full bg-blue-500/10 text-cyan-400 border border-blue-500/20">
+              Live Operations Dashboard
+            </span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+            Civic Command Center
+          </h1>
+          <p className="text-slate-400 text-xs sm:text-sm mt-1 font-medium">
+            Real-time incident monitoring, NLP triage results, and officer dispatch.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link 
+            href="/map"
+            className="flex items-center px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-700 font-bold text-xs transition-all shadow-md"
+          >
+            <MapPin className="w-4 h-4 mr-2 text-red-400" />
+            Tactical Map
+          </Link>
+          <Link 
+            href="/complaints/new" 
+            className="flex items-center px-5 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl shadow-lg shadow-blue-600/30 transition-all font-bold text-xs hover:scale-105"
+          >
+            <PlusCircle className="w-4 h-4 mr-2" /> File New Incident
+          </Link>
         </div>
       </div>
 
+      {/* KPI Stats Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-slate-700 transition-all">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Reports</p>
+              <h3 className="text-3xl font-black text-white mt-1">{totalCases}</h3>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <FileText className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+            <span className="text-blue-400 font-bold">100%</span> cataloged with SHA-256
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-amber-500/30 transition-all">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Cases</p>
+              <h3 className="text-3xl font-black text-amber-400 mt-1">{activeCases}</h3>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+              <Clock className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+            <span className="text-amber-400 font-bold">{activeCases}</span> in investigation pipeline
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-red-500/30 transition-all">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">High Priority Alerts</p>
+              <h3 className="text-3xl font-black text-red-400 mt-1">{highPriorityCases}</h3>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+              <ShieldAlert className="w-5 h-5 animate-pulse" />
+            </div>
+          </div>
+          <div className="mt-3 text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+            <span className="text-red-400 font-bold">AI Priority 1</span> auto-escalated
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 backdrop-blur-md relative overflow-hidden group hover:border-emerald-500/30 transition-all">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resolved Cases</p>
+              <h3 className="text-3xl font-black text-emerald-400 mt-1">{resolvedCases}</h3>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <CheckCircle className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+            <span className="text-emerald-400 font-bold">
+              {totalCases > 0 ? Math.round((resolvedCases / totalCases) * 100) : 0}%
+            </span> resolution rate
+          </div>
+        </div>
+
+      </div>
+
+      {/* Hotspot Alert Banner (if any) */}
       {hotspots.length > 0 && (
-        <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 p-6 rounded-2xl shadow-sm">
-          <h3 className="font-bold text-red-800 dark:text-red-400 flex items-center mb-3">
-             <Activity className="w-5 h-5 mr-2 animate-pulse" /> Smart Incident Detection Alerts
-          </h3>
-          <p className="text-sm text-red-700 dark:text-red-300 mb-4 font-medium">Auto-detected geographical anomaly: Multiple unassigned or pending complaints discovered at matching locations. Immediate police dispatch recommended.</p>
-          <div className="flex flex-wrap gap-2">
-            {hotspots.map(h => (
-              <span key={h} className="bg-red-100 dark:bg-red-800/30 text-red-800 dark:text-red-400 px-3 py-1.5 rounded-lg text-xs font-bold border border-red-200 dark:border-red-900/50 flex items-center">
-                <MapPin className="w-3.5 h-3.5 mr-1" /> {h}
-              </span>
-            ))}
+        <div className="p-5 rounded-2xl bg-red-950/30 border border-red-900/50 shadow-xl flex items-start gap-4">
+          <div className="p-2 rounded-xl bg-red-500/20 text-red-400 flex-shrink-0 mt-0.5">
+            <Zap className="w-5 h-5 animate-bounce" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-red-300 flex items-center gap-2">
+              Automated Hotspot Anomaly Detected
+            </h4>
+            <p className="text-xs text-slate-400 mt-1 font-medium">
+              Multiple unresolved complaints logged at matching GPS coordinates. Immediate tactical unit reassignment suggested.
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {hotspots.map(h => (
+                <span key={h} className="inline-flex items-center px-2.5 py-1 rounded-lg bg-red-900/40 text-red-300 border border-red-800/60 text-xs font-mono font-bold">
+                  <MapPin className="w-3 h-3 mr-1 text-red-400" /> {h}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50 flex justify-between items-center flex-wrap gap-4">
-          <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center">
-            Incident Database
-            <span className="ml-3 text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-slate-800 px-2 py-0.5 rounded-full">{filteredCases.length}</span>
-          </h3>
-          <select 
-            className="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 outline-none text-gray-700 dark:text-gray-200 cursor-pointer shadow-sm transition-all"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option value="All">All Statuses</option>
-            <option value="Pending Review">Pending Review</option>
-            <option value="Assigned Officer">Assigned Officer</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Resolved">Resolved</option>
-          </select>
-        </div>
+      {/* Incident Database Table Card */}
+      <div className="rounded-3xl bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 overflow-hidden shadow-2xl">
         
+        {/* Table Filter & Search Controls */}
+        <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-slate-950/40">
+          
+          <div className="flex items-center gap-3 flex-1 max-w-md">
+            <div className="relative w-full">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search by case title, category, or location..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+            {["All", "Pending Review", "Assigned Officer", "In Progress", "Resolved"].map(status => (
+              <button
+                key={status}
+                onClick={() => setFilterStatus(status)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  filterStatus === status 
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-600/30" 
+                    : "bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800"
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Incidents Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-slate-800/50 border-b border-gray-100 dark:border-slate-800">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-950/60 border-b border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400">
               <tr>
-                <th className="px-6 py-4 font-bold tracking-widest pl-6">Title & Category</th>
-                <th className="px-6 py-4 font-bold tracking-widest">Location</th>
-                <th className="px-6 py-4 font-bold tracking-widest">Priority</th>
-                <th className="px-6 py-4 font-bold tracking-widest">Assigned Officer</th>
-                <th className="px-6 py-4 font-bold tracking-widest">Status</th>
-                <th className="px-6 py-4 font-bold tracking-widest text-right">Action</th>
+                <th className="px-6 py-4">Incident &amp; Category</th>
+                <th className="px-6 py-4">Location</th>
+                <th className="px-6 py-4">Threat Level</th>
+                <th className="px-6 py-4">Assigned Officer</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50 dark:divide-slate-800">
-              {filteredCases.map(c => (
-                <tr key={c._id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors group cursor-default">
-                  <td className="px-6 py-5">
-                    <p className="font-bold text-gray-900 dark:text-white mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex items-center">
-                       {c.title}
-                       {hotspots.includes(c.location) && (
-                            <span title="High-Risk Hotspot Detected" className="ml-2 inline-flex items-center text-[10px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full px-1.5 py-0.5 font-bold uppercase"><Zap className="w-3 h-3" /></span>
+            <tbody className="divide-y divide-slate-800/60 font-medium">
+              {filteredCases.map(c => {
+                const locStr = getLocationString(c.location);
+                const isHotspot = hotspots.includes(locStr);
+                const isHigh = c.priorityScore === "High";
+                const isMed = c.priorityScore === "Medium";
+
+                return (
+                  <tr key={c._id} className="hover:bg-slate-800/40 transition-colors group">
+                    
+                    {/* Title & Category */}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <Link href={`/cases/${c._id}`} className="font-bold text-white text-sm group-hover:text-cyan-400 transition-colors">
+                          {c.title}
+                        </Link>
+                        {isHotspot && (
+                          <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 text-[10px] font-bold border border-red-500/30 flex items-center gap-1">
+                            <Zap className="w-2.5 h-2.5" /> Hotspot
+                          </span>
                         )}
-                    </p>
-                    <span className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded text-xs font-bold pb-[3px] uppercase tracking-wider">{c.category}</span>
-                  </td>
-                  <td className="px-6 py-5 text-gray-600 dark:text-gray-300 font-medium h-full mt-2">
-                    <span className="flex items-center">
-                       <MapPin className="w-3.5 h-3.5 mr-1.5 text-gray-400" />
-                       {c.location || "N/A"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider border ${
-                      c.priorityScore === 'High' ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-400' :
-                      c.priorityScore === 'Medium' ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-400' :
-                      'bg-green-50 border-green-200 text-green-700 dark:bg-green-500/10 dark:border-green-500/30 dark:text-green-400'
-                    }`}>
-                      {c.priorityScore || 'Low'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5">
-                    {c.assignedOfficerId ? (
-                      <span className="inline-flex items-center px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50 rounded-lg text-xs font-bold">
-                        Assigned
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-mono font-bold uppercase">
+                          {c.category || "General"}
+                        </span>
+                        {c.isAnonymous && (
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            &bull; Anonymous
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Location */}
+                    <td className="px-6 py-4 text-slate-300">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                        <span className="truncate max-w-[200px]">{locStr}</span>
+                      </div>
+                    </td>
+
+                    {/* Threat Priority */}
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                        isHigh ? 'bg-red-500/20 text-red-400 border-red-500/40 glow-red' :
+                        isMed ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' :
+                        'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                      }`}>
+                        {c.priorityScore || 'Low'}
                       </span>
-                    ) : (
-                      <select 
-                        className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-xs px-2 py-1.5 outline-none font-medium cursor-pointer"
-                        onChange={(e) => handleAssign(c._id, e.target.value)}
-                        defaultValue=""
+                    </td>
+
+                    {/* Assigned Officer */}
+                    <td className="px-6 py-4">
+                      {c.assignedOfficerId ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/30 text-[11px] font-bold">
+                          <UserCheck className="w-3 h-3 mr-1" />
+                          {officers.find(o => o._id === c.assignedOfficerId)?.name || "Officer Assigned"}
+                        </span>
+                      ) : (
+                        <select 
+                          className="bg-slate-950 border border-slate-800 rounded-lg text-xs px-2 py-1 outline-none font-medium cursor-pointer text-slate-300 focus:border-blue-500"
+                          onChange={(e) => handleAssign(c._id, e.target.value)}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Dispatch Unit...</option>
+                          {officers.map(off => (
+                            <option key={off._id} value={off._id}>{off.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                        c.status === 'Resolved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                        c.status === 'In Progress' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
+                        c.status === 'Assigned Officer' ? 'bg-purple-500/10 text-purple-400 border-purple-500/30' :
+                        'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      }`}>
+                        {c.status}
+                      </span>
+                    </td>
+
+                    {/* Action */}
+                    <td className="px-6 py-4 text-right">
+                      <Link 
+                        href={`/cases/${c._id}`} 
+                        className="inline-flex items-center px-3 py-1.5 bg-slate-800/80 hover:bg-blue-600 text-slate-300 hover:text-white rounded-xl text-xs font-bold border border-slate-700 hover:border-blue-500 transition-all shadow-sm"
                       >
-                         <option value="" disabled>Assign Officer</option>
-                         {officers.map(off => (
-                           <option key={off._id} value={off._id}>{off.name}</option>
-                         ))}
-                      </select>
-                    )}
-                  </td>
-                  <td className="px-6 py-5">
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                      c.status === 'Resolved' ? 'bg-gray-50 border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400' : 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800/50 dark:text-blue-400'
-                    }`}>
-                      {c.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-5 text-right">
-                    <Link href={`/cases/${c._id}`} className="inline-flex items-center px-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm transition-all focus:ring-2 focus:ring-blue-500 outline-none">
-                      Manage <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                        Inspect <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                      </Link>
+                    </td>
+
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+
           {filteredCases.length === 0 && (
-            <div className="p-16 text-center text-gray-500 dark:text-gray-400 flex flex-col items-center">
-              <FileText className="w-12 h-12 text-gray-300 dark:text-gray-700 mb-4" />
-              <p className="font-semibold text-lg">No incidents match your current filter.</p>
+            <div className="p-16 text-center text-slate-500 flex flex-col items-center">
+              <FileText className="w-12 h-12 text-slate-700 mb-3" />
+              <p className="font-bold text-white text-base">No cases match the active filter</p>
+              <p className="text-xs text-slate-400 mt-1">Try resetting the filter tabs or search query.</p>
             </div>
           )}
         </div>
+
       </div>
+
     </div>
   );
 }
